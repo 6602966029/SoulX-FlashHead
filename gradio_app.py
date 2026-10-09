@@ -363,10 +363,10 @@ with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) 
             generate_btn = gr.Button("🚀 Generate Video", variant="primary", size="lg")
             full_body_btn = gr.Button('🚀 生成全身说话视频', variant='primary', visible=False)
             with gr.Group(visible=False) as portrait_group:
-                gr.Markdown('保留完整全身构图，复用整个头部的转动、眨眼、表情与口型，身体保持静止，脖子与头部外围柔化衔接。输出 1080×1920、25 帧；仅单 GPU。全身模式自动裁脸，不使用下方 Use Face Crop。')
-                preview_btn = gr.Button('检查全身构图与头部参考')
+                gr.Markdown('保留完整全身构图，头部、脖子和衣领一起复用生成动作，包含转头、眨眼、表情与口型；按原图比例抑制生成头部的额外放大，在颈根附近柔化过渡到静止躯干。输出 1080×1920、25 帧；仅单 GPU。全身模式自动裁取头颈，不使用下方 Use Face Crop。')
+                preview_btn = gr.Button('检查全身构图与头颈参考')
                 full_body_preview = gr.Image(label='完整构图预览', height=300, interactive=False)
-                head_preview = gr.Image(label='模型头部参考', height=200, interactive=False)
+                head_preview = gr.Image(label='模型头颈参考', height=200, interactive=False)
 
             # 3. Advanced Configuration (Collapsed by default to save space)
             with gr.Accordion("⚙️ Advanced Settings & Model Configuration", open=False):

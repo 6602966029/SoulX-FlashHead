@@ -26,13 +26,13 @@ def fit_canvas(image, output_size, margin=0):
     return canvas, matrix
 
 
-def square_crop(image, bbox, size=512):
+def square_crop(image, bbox, size=512, side_ratio=2, center_bias=.55):
     x1, y1, x2, y2 = map(float, bbox)
-    side = 2 * (x2 - x1)
+    side = side_ratio * (x2 - x1)
     if side <= 0 or y2 <= y1:
         raise ValueError('人脸框无效')
     left = (x1 + x2) / 2 - side / 2
-    top = (y1 + y2) / 2 - side * .55
+    top = (y1 + y2) / 2 - side * center_bias
     scale = size / side
     matrix = np.array([[scale, 0, -left * scale], [0, scale, -top * scale]], np.float64)
     corners = image[[0, 0, -1, -1], [0, -1, 0, -1]]
@@ -72,7 +72,9 @@ def prepare_portrait(image_path, work_dir, options=None):
     finally:
         detector.detector.close()
     box = select_face(boxes, scores) * np.array([image.shape[1], image.shape[0]] * 2)
-    head, image_to_head = square_crop(image, box)
+    # Include neck/collar and move the crop centre slightly down, so the
+    # generated head and neck can be pasted as a continuous moving region.
+    head, image_to_head = square_crop(image, box, side_ratio=2.6, center_bias=.5)
     with mp.solutions.face_mesh.FaceMesh(static_image_mode=True, refine_landmarks=True,
                                        min_detection_confidence=.5) as mesh:
         landmarks = face_landmarks(head, mesh)

@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from .alignment import ANCHORS, estimate_alignment, smooth_alignment
+from .alignment import ANCHORS, estimate_alignment, smooth_alignment, head_scale_matrix
 from .preparation import face_landmarks
 
 
@@ -75,6 +75,26 @@ def make_head_mask(landmarks, face_width):
     return alpha
 
 
+def make_neck_mask(landmarks, face_width):
+    """Infer a neck/collar region from the reference chin; fade into the torso."""
+    chin_x, chin_y = landmarks[152]
+    top = chin_y - face_width * .15
+    bottom = min(496, chin_y + face_width * .55)
+    polygon = np.rint([[chin_x - face_width * .40, top],
+                       [chin_x + face_width * .40, top],
+                       [chin_x + face_width * .42, bottom],
+                       [chin_x - face_width * .42, bottom]]).astype(np.int32)
+    region = np.zeros((512, 512), np.uint8)
+    cv2.fillConvexPoly(region, polygon, 1)
+    alpha = np.clip(cv2.distanceTransform(region, cv2.DIST_L2, 3) /
+                    max(4, face_width * .08), 0, 1)
+    y = np.arange(512, dtype=np.float32)[:, None]
+    lower = np.clip((bottom - y) / max(8, face_width * .20), 0, 1)
+    alpha *= lower * lower * (3 - 2 * lower)
+    alpha[alpha < .01] = 0
+    return alpha
+
+
 class MouthCompositor:
     def __init__(self, context):
         import mediapipe as mp
@@ -134,14 +154,18 @@ class MouthCompositor:
 
 
 class HeadCompositor(MouthCompositor):
-    """Paste head frames in reference coordinates without cancelling their motion."""
+    """Keep generated head/neck motion while constraining size to the photograph."""
 
     def __init__(self, context):
         import mediapipe as mp
         super().__init__(context)
         self.oval_indices = sorted({i for edge in mp.solutions.face_mesh.FACEMESH_FACE_OVAL for i in edge})
-        self.head_mask = make_head_mask(context.landmarks, context.face_width)
+        self.head_mask = np.maximum(make_head_mask(context.landmarks, context.face_width),
+                                    make_neck_mask(context.landmarks, context.face_width))
         self.mask = cv2.warpAffine(self.head_mask, self.mapping, self.roi_size)
+        self.scale = None
+        y, x = np.mgrid[:512, :512].astype(np.float32)
+        self.coverage = np.clip(np.minimum.reduce([x, 511 - x, y, 511 - y]) / 12, 0, 1)
 
     def render(self, head_rgb):
         try:
@@ -154,17 +178,30 @@ class HeadCompositor(MouthCompositor):
             pixels = np.rint(points).astype(int)
             if (pixels < 4).any() or (pixels >= 508).any():
                 raise ValueError('头部运动超出合成区域，请使用更宽的头部参考构图')
-            # The moving face may occlude the original collar, but generated
-            # clothing outside the face never extends the reference neck mask.
+            correction, scale = head_scale_matrix(landmarks, self.context.landmarks,
+                                                  self.context.face_width, self.scale)
+            landmarks = cv2.transform(landmarks[None], correction)[0]
+            pixels = np.rint(landmarks[self.oval_indices]).astype(int)
+            # Head, neck and collar move together. The reference neck mask
+            # fixes the lower join; the moving face can extend above that join.
             face_mask = np.zeros((512, 512), np.uint8)
             cv2.fillConvexPoly(face_mask, cv2.convexHull(pixels.astype(np.int32)), 1)
             face_alpha = np.clip(cv2.distanceTransform(face_mask, cv2.DIST_L2, 3) / 2, 0, 1)
             mask = cv2.warpAffine(np.maximum(self.head_mask, face_alpha), self.mapping, self.roi_size)
-            # Only the fixed crop-to-canvas transform is applied. Face alignment
-            # would remove the generated turn, tilt and translation.
-            patch = cv2.warpAffine(head_rgb, self.mapping, self.roi_size,
-                                   borderMode=cv2.BORDER_REPLICATE)
+            # Scale the entire head/neck about its root, then map back once.
+            # No rotation or translation alignment cancels generated motion.
+            frame_mapping = (np.vstack([self.mapping, [0, 0, 1]]) @
+                             np.vstack([correction, [0, 0, 1]]))[:2]
+            # A shrunken crop no longer covers its original rectangle. Keep
+            # the photograph outside the real, softly bounded image support.
+            mask *= cv2.warpAffine(self.coverage, frame_mapping, self.roi_size)
+            mask[mask < .01] = 0
+            background = tuple(np.median(self.context.head_rgb[[0, 0, -1, -1],
+                                                              [0, -1, 0, -1]], axis=0).astype(float))
+            patch = cv2.warpAffine(head_rgb, frame_mapping, self.roi_size,
+                                   borderMode=cv2.BORDER_CONSTANT, borderValue=background)
             patch, mask = self.hold.accept((patch, mask))
+            self.scale = scale
         except ValueError as error:
             try:
                 patch, mask = self.hold.missing()

@@ -4,6 +4,32 @@ import numpy as np
 ANCHORS = [33, 133, 362, 263, 168, 6, 197]
 
 
+def head_scale_matrix(source, reference, face_width, previous=None):
+    """Limit generated head enlargement without aligning its pose or position."""
+    source, reference = np.asarray(source, np.float64), np.asarray(reference, np.float64)
+    pairs = [(127, 356), (33, 263)]  # temples and outer eye corners, not the moving jaw
+    ratios = []
+    for a, b in pairs:
+        original = np.linalg.norm(reference[a] - reference[b])
+        current = np.linalg.norm(source[a] - source[b])
+        if not np.isfinite([original, current]).all():
+            raise ValueError('头部比例关键点无效')
+        if original > 1:
+            ratios.append(current / original)
+    ratio = np.median(ratios) if ratios else float('nan')
+    if not np.isfinite(ratio) or not .5 <= ratio <= 1.25:
+        raise ValueError('生成头部比例变化过大，请换用更清晰的照片')
+    # Do not enlarge a face made narrower by a turn. Uniform scaling keeps
+    # angles and expressions; the original neck root stays at the torso join.
+    scale = min(1., 1 / ratio)
+    if previous is not None:
+        scale = .35 * scale + .65 * previous
+    pivot = reference[152] + [0, face_width * .45]
+    matrix = np.array([[scale, 0, pivot[0] * (1 - scale)],
+                       [0, scale, pivot[1] * (1 - scale)]], np.float64)
+    return matrix, scale
+
+
 def estimate_alignment(source, target, face_width):
     source, target = np.asarray(source, np.float64), np.asarray(target, np.float64)
     if source.shape != target.shape or source.ndim != 2 or source.shape[1] != 2 or len(source) < 3:
