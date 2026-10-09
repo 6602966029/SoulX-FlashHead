@@ -9,3 +9,8 @@ gradio_results/
 gradio_results_multigpu/
 models/
 tools/
+.venv/
+.env
+.env.tmp
+config/live.local.json
+runtime/

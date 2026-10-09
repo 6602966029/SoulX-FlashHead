@@ -307,7 +307,7 @@ with gr.Blocks(title="SoulX-FlashHead 流式视频生成", theme=gr.themes.Soft(
                 model_type_input = gr.Dropdown(
                     label="Model Type",
                     choices=["pro", "lite"],
-                    value="lite",
+                    value=os.environ.get("FLASHHEAD_MODEL_TYPE", "lite"),
                 )
                 use_face_crop_input = gr.Checkbox(label="Use Face Crop", value=False)
                 seed_input = gr.Number(label="Random Seed", value=9999, precision=0)

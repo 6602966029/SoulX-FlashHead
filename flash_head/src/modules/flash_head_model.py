@@ -8,12 +8,21 @@ from diffusers import ModelMixin
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 import torch.cuda.amp as amp
 import torch.distributed as dist
-from xfuser.core.distributed import (
-    get_sequence_parallel_rank,
-    get_sequence_parallel_world_size,
-    get_sp_group,
-)
-from xfuser.core.long_ctx_attention import xFuserLongContextAttention
+def get_sequence_parallel_rank():
+    from xfuser.core.distributed import get_sequence_parallel_rank as get_rank
+    return get_rank()
+
+
+def get_sequence_parallel_world_size():
+    from xfuser.core.distributed import get_sequence_parallel_world_size as get_size
+    return get_size()
+
+
+def get_sp_group():
+    from xfuser.core.distributed import get_sp_group as get_group
+    return get_group()
+
+
 try:
     import flash_attn_interface
     FLASH_ATTN_3_AVAILABLE = True
@@ -178,6 +187,7 @@ class SelfAttention(nn.Module):
         v = self.v(x)
 
         if self.use_usp:
+            from xfuser.core.long_ctx_attention import xFuserLongContextAttention
             from yunchang.kernels import AttnType
             if SAGE_ATTN_AVAILABLE:
                 attn_type = AttnType.SAGE_AUTO

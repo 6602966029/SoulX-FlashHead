@@ -9,6 +9,20 @@ import subprocess
 from datetime import datetime
 from collections import deque
 from loguru import logger
+from functools import wraps
+import threading
+import tempfile
+from PIL import Image
+
+generation_lock = threading.RLock()
+
+
+def serialized_generation(function):
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with generation_lock:
+            return function(*args, **kwargs)
+    return locked
 
 # Import internal modules
 from flash_head.inference import get_pipeline, get_base_data, get_infer_params, get_audio_embedding, run_pipeline
@@ -144,6 +158,7 @@ def save_video_to_file(frames_list, video_path, audio_path, fps):
     
     return video_path
 
+@serialized_generation
 def run_inference(
     ckpt_dir,
     wav2vec_dir,
@@ -288,6 +303,38 @@ def run_inference(
     
     return final_video_path
 
+def preview_full_body(image_path):
+    if not image_path:
+        return None, None
+    from flash_head.portrait.preparation import prepare_portrait
+    try:
+        os.makedirs('runtime/portrait-preview', exist_ok=True)
+        with tempfile.TemporaryDirectory(dir='runtime/portrait-preview') as directory:
+            context = prepare_portrait(image_path, directory)
+            return context.canvas, context.head_rgb
+    except ValueError as error:
+        raise gr.Error(str(error)) from error
+
+
+@serialized_generation
+def generate_full_body(ckpt, wav2vec, model_type, img, audio, seed, progress=gr.Progress()):
+    global pipeline, loaded_ckpt_dir, loaded_wav2vec_dir, loaded_model_type
+    from flash_head.services.portrait_generation import generate_portrait
+    if not img or not audio:
+        raise gr.Error('请先上传单人全身照片和音频')
+    # Validate before expensive GPU loading, and avoid using a stale preparation preview.
+    preview_full_body(img)
+    if pipeline is None or (loaded_ckpt_dir, loaded_wav2vec_dir, loaded_model_type) != (ckpt, wav2vec, model_type):
+        progress(0, desc='加载数字人模型…')
+        pipeline = get_pipeline(world_size=1, ckpt_dir=ckpt, model_type=model_type, wav2vec_dir=wav2vec)
+        loaded_ckpt_dir, loaded_wav2vec_dir, loaded_model_type = ckpt, wav2vec, model_type
+    try:
+        return generate_portrait(pipeline, img, audio, int(seed) if seed >= 0 else 9999, progress)
+    except Exception as error:
+        logger.exception('Full-body generation failed')
+        raise gr.Error(f'全身生成失败：{error}') from error
+
+
 # Gradio Interface Definition
 with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) as app:
     gr.Markdown("# ⚡ SoulX-FlashHead Video Generator")
@@ -312,7 +359,14 @@ with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) 
                     )
 
             # 2. Main Action Button
+            portrait_mode = gr.Radio(choices=['头部视频', '全身说话'], value='头部视频', label='画面模式')
             generate_btn = gr.Button("🚀 Generate Video", variant="primary", size="lg")
+            full_body_btn = gr.Button('🚀 生成全身说话视频', variant='primary', visible=False)
+            with gr.Group(visible=False) as portrait_group:
+                gr.Markdown('保留原图完整构图，身体与背景静止，只融合嘴部动画。输出 1080×1920、25 帧；仅单 GPU。全身模式自动裁脸，不使用下方 Use Face Crop。')
+                preview_btn = gr.Button('检查全身构图与头部参考')
+                full_body_preview = gr.Image(label='完整构图预览', height=300, interactive=False)
+                head_preview = gr.Image(label='模型头部参考', height=200, interactive=False)
 
             # 3. Advanced Configuration (Collapsed by default to save space)
             with gr.Accordion("⚙️ Advanced Settings & Model Configuration", open=False):
@@ -324,7 +378,7 @@ with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) 
                                 ("Pro Version (Multi-GPU Support)", "pro"),
                                 ("Lite Version (Single GPU Only)", "lite")
                             ],
-                            value="pro",
+                            value=os.environ.get("FLASHHEAD_MODEL_TYPE", "pro"),
                             info="Select the model variant. 'pro' supports both single and multi-GPU, 'lite' is single GPU only."
                         )
                         mode_input = gr.Radio(
@@ -406,6 +460,16 @@ with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) 
             return run_multi_gpu_inference(gpu_ids, ckpt, wav2vec, model_type, img, audio, enc_mode, seed, use_face_crop)
 
     # Event Binding
+    portrait_mode.change(
+        fn=lambda value: [gr.update(visible=value == '头部视频'),
+                          gr.update(visible=value == '全身说话'), gr.update(visible=value == '全身说话')],
+        inputs=portrait_mode, outputs=[generate_btn, full_body_btn, portrait_group], api_name=False)
+    preview_btn.click(preview_full_body, inputs=cond_image_input,
+                      outputs=[full_body_preview, head_preview], api_name='preview_full_body')
+    full_body_btn.click(generate_full_body,
+                        inputs=[ckpt_dir_input, wav2vec_dir_input, model_type_input, cond_image_input,
+                                audio_path_input, seed_input], outputs=video_output,
+                        api_name='generate_full_body', concurrency_id='gpu_generation', concurrency_limit=1)
     generate_btn.click(
         fn=dispatch_inference,
         inputs=[
@@ -420,7 +484,8 @@ with gr.Blocks(title="SoulX-FlashHead Video Generator", theme=gr.themes.Soft()) 
             seed_input,
             use_face_crop_input
         ],
-        outputs=video_output
+        outputs=video_output,
+        concurrency_id='gpu_generation', concurrency_limit=1
     ) 
 
 if __name__ == "__main__":

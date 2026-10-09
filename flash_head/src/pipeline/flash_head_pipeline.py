@@ -16,8 +16,8 @@ from flash_head.utils.utils import match_and_blend_colors_torch, resize_and_cent
 from flash_head.utils.facecrop import process_image
 
 # compile models to speedup inference
-COMPILE_MODEL = True
-COMPILE_VAE = True
+COMPILE_MODEL = os.name != "nt"
+COMPILE_VAE = os.name != "nt"
 # use parallel vae to speedup decode/encode, only support WanVAE
 USE_PARALLEL_VAE = True
 

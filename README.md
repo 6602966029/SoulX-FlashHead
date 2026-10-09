@@ -127,6 +127,66 @@ bash inference_script_single_gpu_lite.sh
 ```
 
 ### ⚡️ Gradio Demo
+#### 全身说话（第一版）
+
+普通页面中选择“全身说话”，上传一张单人正面全身照和音频，点击
+“检查全身构图与头部参考”，确认头脚完整后点击“生成全身说话视频”。
+输出为 1080×1920、25 fps 的 H.264/AAC MP4。原图等比例置入画布，身体、
+衣服、头发和背景保持静止；现有模型生成的嘴部动画经过对齐与局部融合。
+该模式固定使用单 GPU，流式全身模式尚未开放。旧 `dispatch_inference` API
+保留；新增 `preview_full_body` 与 `generate_full_body` API。
+
+请使用清晰、无遮挡的正面图。三视图拼图和多个人脸会被拒绝；原图中已经缺失的
+头或脚不会自动补全。对齐连续失败会终止任务，不返回半成品。
+全身合成逐帧编码，不缓存全部 1080p 帧。
+
+自动测试：`python -m unittest discover -s tests -v`。
+方案与实施记录位于 `docs/superpowers/`。
+
+#### Windows single-GPU startup (configured local runtime)
+
+视频号本机配置与 OBS 预览：
+
+```powershell
+.\start-live.ps1 -WithOBS
+```
+
+配置页为 `http://127.0.0.1:7862/`，OBS 浏览器源为
+`http://127.0.0.1:7862/player`。独立的 `SoulXLive` 场景集合使用竖屏
+1080×1920、25 帧，画面固定显示“AI数字人直播”。脚本只在 OBS 关闭时更新
+该集合和配置文件，并备份旧文件；不会开启正式直播。
+
+VB-CABLE 安装后需先保存工作并重启电脑，再运行上述命令。脚本检测到一对
+有效的 CABLE Input / Output 后，将 OBS 浏览器源设置为“监听并输出”，
+监听设备设为 CABLE Input。视频号直播伴侣中选择 OBS Virtual Camera 作为
+摄像头、CABLE Output 作为麦克风；在 OBS 中手动启动虚拟摄像机，再检查音画。
+视频号直播伴侣需从官方渠道下载并由本人扫码登录。
+
+文字模型和腾讯云语音合成依赖已安装，API 密钥在配置页本机填写和测试，
+保存至被 Git 忽略的 `.env`。当前播放器用于已生成视频的循环预览；
+产品资料库、自动讲解调度和视频号弹幕接入尚未完成。
+
+```powershell
+.\start.ps1
+# Open http://127.0.0.1:7860
+
+# Optional streaming interface on a separate port:
+.\start.ps1 -Streaming
+```
+
+The launcher uses the project-local Python in `tools/python-official`, adds the
+bundled FFmpeg and FFprobe in `tools/bin` to PATH, and writes logs to `logs/gradio-7860.log` and
+`logs/gradio-7860.err.log`. The configured runtime includes the Pro model and
+Wav2Vec2 checkpoints in `models/`. Lite requires its own additional checkpoints.
+Windows single-GPU mode uses PyTorch SDPA when optional attention kernels are
+unavailable and disables `torch.compile`. Multi-GPU mode still requires the
+original Linux/NCCL/xFuser environment. Windows dependencies are recorded in
+`requirements-windows.txt`, using the CUDA 12.8 extra index:
+
+```powershell
+pip install -r requirements-windows.txt --extra-index-url https://download.pytorch.org/whl/cu128
+```
+
 ```bash
 # Gradio support needs gradio==5.50.0, and Chrome recommonded.
 

@@ -1,0 +1,100 @@
+{
+  "name": "SoulXLive",
+  "sources": [
+    {
+      "name": "SoulX AI直播画面",
+      "uuid": "3e1d79e3-54eb-4302-83d1-1e6cde1f97c7",
+      "id": "browser_source",
+      "versioned_id": "browser_source",
+      "settings": {
+        "url": "http://127.0.0.1:7862/player",
+        "width": 1080,
+        "height": 1920,
+        "fps": 25,
+        "fps_custom": true,
+        "reroute_audio": true,
+        "shutdown": false,
+        "restart_when_active": false
+      },
+      "mixers": 255,
+      "sync": 0,
+      "flags": 0,
+      "volume": 1.0,
+      "balance": 0.5,
+      "enabled": true,
+      "muted": false,
+      "monitoring_type": 0,
+      "hotkeys": {},
+      "private_settings": {}
+    },
+    {
+      "name": "AI数字人直播",
+      "uuid": "3c02bc0d-2edd-4c32-a7eb-0d2ff274f5a7",
+      "id": "scene",
+      "versioned_id": "scene",
+      "settings": {
+        "id_counter": 1,
+        "items": [
+          {
+            "name": "SoulX AI直播画面",
+            "source_uuid": "3e1d79e3-54eb-4302-83d1-1e6cde1f97c7",
+            "id": 1,
+            "visible": true,
+            "locked": true,
+            "rot": 0.0,
+            "align": 5,
+            "pos": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "scale": {
+              "x": 1.0,
+              "y": 1.0
+            },
+            "bounds": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "bounds_type": 0,
+            "bounds_align": 0,
+            "crop_left": 0,
+            "crop_right": 0,
+            "crop_top": 0,
+            "crop_bottom": 0,
+            "private_settings": {}
+          }
+        ]
+      },
+      "mixers": 0,
+      "sync": 0,
+      "flags": 0,
+      "volume": 1.0,
+      "balance": 0.5,
+      "enabled": true,
+      "muted": false,
+      "monitoring_type": 0,
+      "hotkeys": {},
+      "private_settings": {}
+    }
+  ],
+  "groups": [],
+  "scene_order": [
+    {
+      "name": "AI数字人直播"
+    }
+  ],
+  "current_scene": "AI数字人直播",
+  "current_program_scene": "AI数字人直播",
+  "current_transition": "淡入淡出",
+  "transition_duration": 200,
+  "transitions": [],
+  "quick_transitions": [],
+  "saved_projectors": [],
+  "preview_locked": true,
+  "scaling_enabled": false,
+  "virtual-camera": {
+    "type2": 0
+  },
+  "modules": {},
+  "version": 2
+}

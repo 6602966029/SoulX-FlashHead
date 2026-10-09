@@ -1,0 +1,14 @@
+{
+  "platform": "wechat_channels",
+  "model_type": "lite",
+  "canvas_width": 1080,
+  "canvas_height": 1920,
+  "fps": 25,
+  "ai_label": "AI数字人直播",
+  "obs_scene_collection": "SoulXLive",
+  "obs_profile": "SoulXLive",
+  "player_url": "http://127.0.0.1:7862/player",
+  "audio_monitor_device": "CABLE Input",
+  "companion_microphone_device": "CABLE Output",
+  "comment_connection": "not_configured"
+}
