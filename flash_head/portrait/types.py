@@ -7,6 +7,7 @@ import numpy as np
 class PortraitOptions:
     output_size: tuple = (1080, 1920)
     fps: int = 25
+    canvas_margin: int = 64
 
 
 @dataclass(frozen=True)

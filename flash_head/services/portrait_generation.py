@@ -6,7 +6,7 @@ import time
 import numpy as np
 from loguru import logger
 from flash_head.portrait.preparation import prepare_portrait
-from flash_head.portrait.compositor import MouthCompositor
+from flash_head.portrait.compositor import HeadCompositor
 from .video_export import export_video
 
 
@@ -40,7 +40,7 @@ def generate_portrait(pipeline, image_path, audio_path, seed, progress=lambda *a
         cached = rate * params['cached_audio_duration']
         audio_end = params['cached_audio_duration'] * fps
         dq = deque([0.0] * cached, maxlen=cached)
-        composer = MouthCompositor(context)
+        composer = HeadCompositor(context)
         output = Path('gradio_results') / ('res_' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.mp4')
         rendered = 0
         def frames():
@@ -52,8 +52,8 @@ def generate_portrait(pipeline, image_path, audio_path, seed, progress=lambda *a
                 generated = run_pipeline(pipeline, embedding)[motion:]
                 head_frames = generated.detach().cpu().numpy().astype(np.uint8)
                 for frame in head_frames:
-                    yield composer.render(frame)
                     rendered += 1
+                    yield composer.render(frame)
                 progress(.1 + .8 * (index + 1) / total, desc=f'全身合成 {index + 1}/{total}')
         try:
             result = export_video(frames(), audio_path, output, fps)

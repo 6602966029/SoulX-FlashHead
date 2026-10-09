@@ -1,1 +1,1 @@
-"""Fixed full-body portraits with a locally animated mouth."""
+"""Fixed full-body portraits with a generated animated head."""

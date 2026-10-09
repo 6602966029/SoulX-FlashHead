@@ -5,12 +5,14 @@ from PIL import Image, ImageOps
 from .types import PortraitContext, PortraitOptions
 
 
-def fit_canvas(image, output_size):
+def fit_canvas(image, output_size, margin=0):
     width, height = output_size
     source_h, source_w = image.shape[:2]
     if min(width, height, source_h, source_w) <= 0:
         raise ValueError('图片和输出尺寸必须大于零')
-    scale = min(width / source_w, height / source_h)
+    if margin < 0 or 2 * margin >= min(width, height):
+        raise ValueError('画布留白超出输出尺寸')
+    scale = min((width - 2 * margin) / source_w, (height - 2 * margin) / source_h)
     target_w, target_h = max(1, round(source_w * scale)), max(1, round(source_h * scale))
     left, top = (width - target_w) // 2, (height - target_h) // 2
     corners = image[[0, 0, -1, -1], [0, -1, 0, -1]]
@@ -33,8 +35,10 @@ def square_crop(image, bbox, size=512):
     top = (y1 + y2) / 2 - side * .55
     scale = size / side
     matrix = np.array([[scale, 0, -left * scale], [0, scale, -top * scale]], np.float64)
+    corners = image[[0, 0, -1, -1], [0, -1, 0, -1]]
+    background = tuple(np.median(corners, axis=0).astype(float))
     crop = cv2.warpAffine(image, matrix, (size, size), flags=cv2.INTER_LINEAR,
-                          borderMode=cv2.BORDER_REPLICATE)
+                          borderMode=cv2.BORDER_CONSTANT, borderValue=background)
     return crop, matrix
 
 
@@ -72,7 +76,7 @@ def prepare_portrait(image_path, work_dir, options=None):
     with mp.solutions.face_mesh.FaceMesh(static_image_mode=True, refine_landmarks=True,
                                        min_detection_confidence=.5) as mesh:
         landmarks = face_landmarks(head, mesh)
-    canvas, image_to_canvas = fit_canvas(image, options.output_size)
+    canvas, image_to_canvas = fit_canvas(image, options.output_size, options.canvas_margin)
     head_to_image = cv2.invertAffineTransform(image_to_head)
     head_to_canvas = (np.vstack([image_to_canvas, [0, 0, 1]]) @
                       np.vstack([head_to_image, [0, 0, 1]]))[:2]

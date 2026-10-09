@@ -52,6 +52,29 @@ def make_mouth_mask(landmarks, face_width):
     return mask
 
 
+def make_head_mask(landmarks, face_width):
+    """Keep generated eyes, expression and head pose; fade at crop edges and neck."""
+    import mediapipe as mp
+    y, x = np.mgrid[:512, :512].astype(np.float32)
+    feather = max(8, face_width * .12)
+    distance = np.minimum.reduce([x, 511 - x, y])
+    edge_alpha = np.clip(distance / feather, 0, 1)
+    edge_alpha = edge_alpha * edge_alpha * (3 - 2 * edge_alpha)
+    oval = sorted({i for edge in mp.solutions.face_mesh.FACEMESH_FACE_OVAL for i in edge})
+    face = np.zeros((512, 512), np.uint8)
+    cv2.fillConvexPoly(face, cv2.convexHull(np.rint(landmarks[oval]).astype(np.int32)), 1)
+    face_alpha = np.clip(1 - cv2.distanceTransform(1 - face, cv2.DIST_L2, 3) /
+                         max(2, face_width * .02), 0, 1)
+    # Hair and ears need a wide upper region; the lower region must follow
+    # the jaw instead of cutting a rectangular corner into the static neck.
+    upper_alpha = np.clip((landmarks[1, 1] + face_width * .15 - y) /
+                          max(2, face_width * .15), 0, 1)
+    upper_alpha = upper_alpha * upper_alpha * (3 - 2 * upper_alpha)
+    alpha = np.maximum(face_alpha, upper_alpha) * edge_alpha
+    alpha[alpha < .01] = 0
+    return alpha
+
+
 class MouthCompositor:
     def __init__(self, context):
         import mediapipe as mp
@@ -108,3 +131,47 @@ class MouthCompositor:
 
     def close(self):
         self.mesh.close()
+
+
+class HeadCompositor(MouthCompositor):
+    """Paste head frames in reference coordinates without cancelling their motion."""
+
+    def __init__(self, context):
+        import mediapipe as mp
+        super().__init__(context)
+        self.oval_indices = sorted({i for edge in mp.solutions.face_mesh.FACEMESH_FACE_OVAL for i in edge})
+        self.head_mask = make_head_mask(context.landmarks, context.face_width)
+        self.mask = cv2.warpAffine(self.head_mask, self.mapping, self.roi_size)
+
+    def render(self, head_rgb):
+        try:
+            if head_rgb.shape != (512, 512, 3) or head_rgb.dtype != np.uint8:
+                raise ValueError('头部帧格式无效')
+            landmarks = face_landmarks(head_rgb, self.mesh)
+            points = landmarks[self.oval_indices]
+            if not np.isfinite(points).all():
+                raise ValueError('头部关键点无效')
+            pixels = np.rint(points).astype(int)
+            if (pixels < 4).any() or (pixels >= 508).any():
+                raise ValueError('头部运动超出合成区域，请使用更宽的头部参考构图')
+            # The moving face may occlude the original collar, but generated
+            # clothing outside the face never extends the reference neck mask.
+            face_mask = np.zeros((512, 512), np.uint8)
+            cv2.fillConvexPoly(face_mask, cv2.convexHull(pixels.astype(np.int32)), 1)
+            face_alpha = np.clip(cv2.distanceTransform(face_mask, cv2.DIST_L2, 3) / 2, 0, 1)
+            mask = cv2.warpAffine(np.maximum(self.head_mask, face_alpha), self.mapping, self.roi_size)
+            # Only the fixed crop-to-canvas transform is applied. Face alignment
+            # would remove the generated turn, tilt and translation.
+            patch = cv2.warpAffine(head_rgb, self.mapping, self.roi_size,
+                                   borderMode=cv2.BORDER_REPLICATE)
+            patch, mask = self.hold.accept((patch, mask))
+        except ValueError as error:
+            try:
+                patch, mask = self.hold.missing()
+            except ValueError:
+                raise ValueError(f'头部帧连续不可用：{error}') from error
+        self.mask = mask
+        result = self.context.canvas.copy()
+        left, top, right, bottom = self.bounds
+        result[top:bottom, left:right] = blend_local(self.base, patch, mask)
+        return result
